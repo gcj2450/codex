@@ -2506,6 +2506,37 @@ async fn request_plugin_install_description_requires_exhausting_tool_search() {
 }
 
 #[tokio::test]
+async fn opencadstudio_exposes_native_tools_without_a_code_mode_host() {
+    for source in ["opencadstudio", "other-embedded-surface"] {
+        let plan = probe_with(
+            |turn| {
+                turn.session_source = SessionSource::Custom(source.to_string());
+                turn.code_mode_available = false;
+                set_features(turn, &[Feature::CodeMode, Feature::CodeModeOnly]);
+                update_turn_settings_for_test(turn, |settings| {
+                    Arc::make_mut(&mut settings.model_info).tool_mode = Some(ToolMode::CodeModeOnly);
+                });
+            },
+            ToolPlanInputs {
+                dynamic_tools: vec![dynamic_tool(None, "ocs_read", false)],
+                ..ToolPlanInputs::default()
+            },
+        )
+        .await;
+        if source == "opencadstudio" {
+            assert_eq!(plan.tool_mode, ToolMode::Direct);
+            assert!(!plan.requires_code_mode_worker);
+            plan.assert_visible_contains(&["ocs_read"]);
+            plan.assert_visible_lacks(&["exec", "wait"]);
+        } else {
+            assert_eq!(plan.tool_mode, ToolMode::CodeModeOnly);
+            assert!(plan.requires_code_mode_worker);
+            plan.assert_visible_contains(&["exec", "wait"]);
+        }
+    }
+}
+
+#[tokio::test]
 async fn code_mode_only_exposes_code_executor_and_hides_nested_tools() {
     let input = ToolPlanInputs {
         dynamic_tools: vec![dynamic_tool(

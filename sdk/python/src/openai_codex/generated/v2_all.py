@@ -6297,7 +6297,7 @@ class ThreadSource(str, Enum):
         return member
 
 
-class ThreadSourceKind(Enum):
+class ThreadSourceKindValue(Enum):
     cli = "cli"
     vscode = "vscode"
     exec = "exec"
@@ -6308,6 +6308,21 @@ class ThreadSourceKind(Enum):
     sub_agent_thread_spawn = "subAgentThreadSpawn"
     sub_agent_other = "subAgentOther"
     unknown = "unknown"
+
+
+class CustomThreadSourceKind(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        populate_by_name=True,
+    )
+    custom: str
+
+
+class ThreadSourceKind(RootModel[ThreadSourceKindValue | CustomThreadSourceKind]):
+    model_config = ConfigDict(
+        populate_by_name=True,
+    )
+    root: ThreadSourceKindValue | CustomThreadSourceKind
 
 
 class ThreadStartSource(Enum):

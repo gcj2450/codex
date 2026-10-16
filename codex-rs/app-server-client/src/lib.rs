@@ -30,6 +30,7 @@ use std::fmt;
 use std::io::Error as IoError;
 use std::io::ErrorKind;
 use std::io::Result as IoResult;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -57,6 +58,7 @@ use codex_config::CloudConfigBundleLoader;
 use codex_config::LoaderOverrides;
 use codex_config::NoopThreadConfigLoader;
 use codex_core::config::Config;
+use codex_core::config::ConfigBuilder;
 pub use codex_core::otel_init::build_provider as build_otel_provider;
 pub use codex_exec_server::EnvironmentManager;
 pub use codex_exec_server::ExecServerRuntimeOptions;
@@ -611,8 +613,66 @@ impl InProcessAppServerClient {
     }
 }
 
+/// Starts Codex as an embedded desktop surface with no process or socket
+/// transport. The caller owns the Tokio runtime and supplies the workspace
+/// used for config and project context. No executor environment is exposed;
+/// desktop hosts can provide their own native tools through dynamic tools.
+pub async fn start_embedded_surface_client(
+    cwd: PathBuf,
+    client_name: String,
+    client_version: String,
+) -> IoResult<InProcessAppServerClient> {
+    let loader_overrides = LoaderOverrides::default();
+    let embedded_network_policy = EmbeddedNetworkPolicy::load(&loader_overrides).await;
+    let mut config = ConfigBuilder::default()
+        .fallback_cwd(Some(cwd))
+        .loader_overrides(loader_overrides.clone())
+        .build()
+        .await?;
+    embedded_network_policy.activate(&mut config);
+
+    let state_db = codex_core::init_state_db(&config).await;
+    let environment_manager = EnvironmentManager::without_environments(
+        embedded_network_policy.bind(config.http_client_factory()),
+    );
+    let config_warnings = config
+        .startup_warnings
+        .iter()
+        .map(|summary| ConfigWarningNotification {
+            summary: summary.clone(),
+            details: None,
+            path: None,
+            range: None,
+        })
+        .collect();
+
+    InProcessAppServerClient::start(InProcessClientStartArgs {
+        arg0_paths: Arg0DispatchPaths::default(),
+        config: Arc::new(config),
+        cli_overrides: Vec::new(),
+        loader_overrides,
+        strict_config: false,
+        cloud_config_bundle: CloudConfigBundleLoader::default(),
+        embedded_network_policy,
+        feedback: CodexFeedback::new(),
+        log_db: None,
+        state_db,
+        environment_manager: Arc::new(environment_manager),
+        config_warnings,
+        session_source: SessionSource::Custom("opencadstudio".to_string()),
+        enable_codex_api_key_env: false,
+        client_name,
+        client_version,
+        experimental_api: true,
+        mcp_server_openai_form_elicitation: false,
+        opt_out_notification_methods: Vec::new(),
+        channel_capacity: DEFAULT_IN_PROCESS_CHANNEL_CAPACITY,
+    })
+    .await
+}
+
 impl InProcessAppServerRequestHandle {
-    pub(crate) async fn resolve_server_request(
+    pub async fn resolve_server_request(
         &self,
         request_id: RequestId,
         result: JsonRpcResult,
@@ -640,7 +700,7 @@ impl InProcessAppServerRequestHandle {
     }
 
     /// Rejects a pending server request with JSON-RPC error payload.
-    pub(crate) async fn reject_server_request(
+    pub async fn reject_server_request(
         &self,
         request_id: RequestId,
         error: JSONRPCErrorError,
@@ -700,7 +760,7 @@ impl InProcessAppServerRequestHandle {
 }
 
 impl AppServerRequestHandle {
-    pub(crate) async fn resolve_server_request(
+    pub async fn resolve_server_request(
         &self,
         request_id: RequestId,
         result: JsonRpcResult,
@@ -711,7 +771,7 @@ impl AppServerRequestHandle {
         }
     }
 
-    pub(crate) async fn reject_server_request(
+    pub async fn reject_server_request(
         &self,
         request_id: RequestId,
         error: JSONRPCErrorError,

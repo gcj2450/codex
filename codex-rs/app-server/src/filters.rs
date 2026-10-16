@@ -36,6 +36,7 @@ pub(crate) fn compute_source_filters(
             .filter_map(|kind| match kind {
                 ThreadSourceKind::Cli => Some(CoreSessionSource::Cli),
                 ThreadSourceKind::VsCode => Some(CoreSessionSource::VSCode),
+                ThreadSourceKind::Custom(name) => Some(CoreSessionSource::Custom(name.clone())),
                 ThreadSourceKind::Exec
                 | ThreadSourceKind::AppServer
                 | ThreadSourceKind::SubAgent
@@ -56,6 +57,9 @@ pub(crate) fn source_kind_matches(source: &CoreSessionSource, filter: &[ThreadSo
         ThreadSourceKind::VsCode => matches!(source, CoreSessionSource::VSCode),
         ThreadSourceKind::Exec => matches!(source, CoreSessionSource::Exec),
         ThreadSourceKind::AppServer => matches!(source, CoreSessionSource::Mcp),
+        ThreadSourceKind::Custom(name) => {
+            matches!(source, CoreSessionSource::Custom(source_name) if source_name == name)
+        }
         ThreadSourceKind::SubAgent => matches!(source, CoreSessionSource::SubAgent(_)),
         ThreadSourceKind::SubAgentReview => {
             matches!(
@@ -123,6 +127,29 @@ mod tests {
 
         assert_eq!(allowed_sources, Vec::new());
         assert_eq!(filter, Some(source_kinds));
+    }
+
+    #[test]
+    fn custom_surface_filter_selects_only_the_requested_embedder() {
+        let source_kinds = vec![ThreadSourceKind::Custom("opencadstudio".to_string())];
+        let (allowed_sources, filter) = compute_source_filters(Some(source_kinds.clone()));
+
+        assert_eq!(
+            allowed_sources,
+            vec![CoreSessionSource::Custom("opencadstudio".to_string())]
+        );
+        assert_eq!(filter, Some(source_kinds.clone()));
+        assert!(source_kind_matches(
+            &CoreSessionSource::Custom("opencadstudio".to_string()),
+            &source_kinds
+        ));
+        for source in [
+            CoreSessionSource::Cli,
+            CoreSessionSource::Mcp,
+            CoreSessionSource::Custom("chatgpt".to_string()),
+        ] {
+            assert!(!source_kind_matches(&source, &source_kinds));
+        }
     }
 
     #[test]

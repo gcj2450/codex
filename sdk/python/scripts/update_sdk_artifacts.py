@@ -554,12 +554,17 @@ def generate_v2_all(schema_dir: Path, *, format_output: bool = True) -> None:
     if old_package_dir.exists():
         shutil.rmtree(old_package_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory(prefix="codex-models-") as td:
         normalized_bundle = Path(td) / schema_bundle_path(schema_dir).name
         normalized_bundle.write_text(_normalized_schema_bundle_text(schema_dir))
-        if not format_output:
+        if format_output:
+            # Code generation changes into the output directory before running
+            # Ruff. Keep the SDK formatting settings for the temporary output.
+            shutil.copyfile(sdk_root() / "pyproject.toml", Path(td) / "pyproject.toml")
+        else:
             # The pinned generator accepts an empty formatter list through TOML.
             (Path(td) / "pyproject.toml").write_text("[tool.datamodel-codegen]\nformatters = []\n")
+        generated_models = Path(td) / "v2_all.py"
         run_python_module(
             "datamodel_code_generator",
             [
@@ -568,7 +573,7 @@ def generate_v2_all(schema_dir: Path, *, format_output: bool = True) -> None:
                 "--input-file-type",
                 "jsonschema",
                 "--output",
-                str(out_path),
+                str(generated_models),
                 "--output-model-type",
                 "pydantic_v2.BaseModel",
                 "--target-python-version",
@@ -590,6 +595,7 @@ def generate_v2_all(schema_dir: Path, *, format_output: bool = True) -> None:
             + (["--formatters", "ruff-format"] if format_output else []),
             cwd=sdk_root() if format_output else Path(td),
         )
+        shutil.copyfile(generated_models, out_path)
     _preserve_inline_image_class_names(out_path)
     _add_legacy_image_generation_thread_item_alias(out_path)
     _require_nullable_field(out_path, "ChatgptAccount", r"email: str \| None")

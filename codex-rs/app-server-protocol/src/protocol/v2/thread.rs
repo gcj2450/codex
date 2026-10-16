@@ -1514,7 +1514,7 @@ pub enum ThreadListCwdFilter {
     Many(Vec<String>),
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename_all = "camelCase", export_to = "v2/")]
 pub enum ThreadSourceKind {
@@ -1524,6 +1524,7 @@ pub enum ThreadSourceKind {
     VsCode,
     Exec,
     AppServer,
+    Custom(String),
     SubAgent,
     SubAgentReview,
     SubAgentCompact,
